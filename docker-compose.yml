@@ -1,0 +1,411 @@
+version: "3"
+services:
+    
+  influxdb:
+    image: harbor.g3s-service.itcoc.tech/i3s/backends/bitnami/influxdb:1-centos-7
+    hostname: training-grafana-influxdb
+    container_name: training-grafana-influxdb
+
+    restart: unless-stopped
+    logging:
+      options:
+        tag: "{{.ImageName}}/{{.Name}}/{{.ID}}"
+
+    environment:
+      - INFLUXDB_ADMIN_USER_PASSWORD=influx
+    ports:
+      - 8086:8086
+      - 8088:8088
+    volumes:
+#   volumes:
+#     # Data persistency
+      - ${PWD}/data/influxdb:/bitnami/influxdb
+    networks:
+      - tg-influxdb
+      - tg-influxdb-telegraf
+    healthcheck:
+      test: ['CMD', 'curl -f http://127.0.0.1:8086 || exit 1']
+      interval: 15s
+      timeout: 5s
+      retries: 6
+
+ 
+  telegraf:
+    image: telegraf-simple:dev
+    hostname: training-grafana-telegraf
+    container_name: training-grafana-telegraf
+
+    restart: unless-stopped
+    logging:
+      options:
+        tag: "{{.ImageName}}/{{.Name}}/{{.ID}}"
+
+    ports:
+      - 9273:9273
+      # - 8088:8088
+    volumes:
+      - ${PWD}/conf/telegraf/scripts:/opt/telegraf/scripts
+      - ${PWD}/conf/telegraf/conf.d:/opt/telegraf/conf.d
+      - /:/rootfs:ro
+      - /var/run:/var/run:rw
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro      
+    networks:
+      - tg-influxdb-telegraf
+    healthcheck:
+      test: ['CMD', 'curl -f http://127.0.0.1:9273 || exit 1']
+      interval: 15s
+      timeout: 5s
+      retries: 6      
+
+  maria-db:
+    container_name: training-grafana-mariadb
+    hostname: training-grafana-mariadb
+    #  - "3306:3306"
+    restart: unless-stopped
+    logging:
+      options:
+        tag: "{{.ImageName}}/{{.Name}}/{{.ID}}"
+
+
+    ports:
+      # - '3306:3306'  # mariadb external standard port
+      - '4444:4444'
+      - '4567:4567'
+      - '4568:4568'
+    volumes:
+      - '${PWD}/data/mariadb:/bitnami/mariadb'
+
+#docker pull harbor.g3s-service.itcoc.tech/i3s/backends/bitnami/mariadb:10.3-centos-7
+    image: 'harbor.g3s-service.itcoc.tech/i3s/backends/bitnami/mariadb-galera:10.5-centos-7'
+    environment:
+      - MARIADB_ROOT_PASSWORD=root
+      - MARIADB_GALERA_MARIABACKUP_PASSWORD=backup-password
+      - MARIADB_DATABASE=grafana
+      - MARIADB_USER=grafana
+      - MARIADB_PASSWORD=grafana
+      # # Enable LDAP
+      # - MARIADB_ENABLE_LDAP=yes
+      # - LDAP_URI=ldap://openldap:1389
+      # - LDAP_BASE=dc=example,dc=org
+      # - LDAP_BIND_DN=cn=admin,dc=example,dc=org
+      # - LDAP_BIND_PASSWORD=adminpassword
+    healthcheck:
+      test: ['CMD', '/opt/bitnami/scripts/mariadb-galera/healthcheck.sh']
+      interval: 15s
+      timeout: 5s
+      retries: 6
+
+    # volumes:
+    #   - ${PWD}/data-maria:/var/lib/mysql
+    networks:
+      - tg-mariadb
+
+  fluentd:
+    image: harbor.g3s-service.itcoc.tech/i3s/backends/bitnami/fluentd:1-centos-7
+    container_name: training-grafana-fluentd
+    hostname: training-grafana-fluentd
+
+    restart: unless-stopped
+    logging:
+      options:
+        tag: "{{.ImageName}}/{{.Name}}/{{.ID}}"
+
+    ports:
+      - '24231:24231'
+      - '5140:5140'
+    user: root
+    environment:
+      - FLUENTD_DAEMON_USER=root
+      - FLUENTD_DAEMON_GROUP=root
+    volumes:
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - ${PWD}/conf/fluentd/fluentd.conf:/opt/bitnami/fluentd/conf/fluentd.conf:ro
+      # - ${PWD}/data/fluentd:/opt/bitnami/fluentd/:rw
+    networks:
+      - tg-elastic
+      - tg-fluentd-metrics
+
+
+  logstash:
+    image: harbor.g3s-service.itcoc.tech/i3s/backends/bitnami/logstash:7.9.2-centos-7-r0
+    container_name: training-grafana-logstash
+    hostname: training-grafana-logstash
+
+    restart: unless-stopped
+    logging:
+      options:
+        tag: "{{.ImageName}}/{{.Name}}/{{.ID}}"
+    
+    environment:
+      - LOGSTASH_CONF_FILENAME=logstash.conf
+          
+    expose:
+      - "9600"
+
+    ports:
+      - '30081:8080'
+      # - '9600:9600'
+
+    volumes:
+      - ${PWD}/conf/logstash/logstash.conf:/opt/bitnami/logstash/config/logstash.conf
+      # - ${PWD}/conf/logstash/logstash.conf:/opt/bitnami/logstash/config/default_config.conf
+      - ${PWD}/conf/logstash/logstash.yml:/opt/bitnami/logstash/config/logstash.yml
+
+    networks:
+      - tg-elastic
+      - tg-logstash-metrics
+
+    healthcheck:
+      test: ['CMD', 'curl -f http://127.0.0.1:8080 || exit 1']
+      interval: 15s
+      timeout: 5s
+      retries: 6
+
+
+  logstash-metrics:
+    image: harbor.g3s-service.itcoc.tech/i3s/backends/bitnami/logstash-exporter:0.1.2-centos-7-r330
+    container_name: training-grafana-logstash-metrics
+    hostname: training-grafana-logstash-metrics
+
+    restart: unless-stopped
+    logging:
+      options:
+        tag: "{{.ImageName}}/{{.Name}}/{{.ID}}"
+
+    ports:
+      - '9198:9198'
+    #   - '5140:5140'
+    # user: root
+    # environment:
+    #   - FLUENTD_DAEMON_USER=root
+    #   - FLUENTD_DAEMON_GROUP=root
+    # volumes:
+    #   # - /var/lib/docker/containers:/var/lib/docker/containers:ro
+    #   - ${PWD}/conf/logstash/logstash.conf:/opt/bitnami/logstash/config/logstash.conf
+    #   # - ${PWD}/data/fluentd:/opt/bitnami/fluentd/:rw
+    depends_on:
+      - logstash
+    
+    networks:
+      - tg-elastic
+
+    entrypoint: 'logstash_exporter --logstash.endpoint="http://logstash:9600" '
+
+
+  elasticsearch-exporter:
+    image: harbor.g3s-service.itcoc.tech/i3s/backends/bitnami/elasticsearch-exporter:1-centos-7
+    container_name: training-grafana-elastic-exporter
+    hostname: training-grafana-elastic-exporter
+
+    restart: unless-stopped
+    logging:
+      options:
+        tag: "{{.ImageName}}/{{.Name}}/{{.ID}}"
+
+
+    entrypoint: "/opt/bitnami/elasticsearch-exporter/bin/elasticsearch_exporter --es.uri=http://elasticsearch:9200 --es.all"
+    restart: unless-stopped
+      
+    depends_on:
+      - elasticsearch
+
+    ports:
+      - '9114:9114'
+    
+    networks:
+       - tg-elastic
+       - tg-elastic-metrics
+
+  elasticsearch:
+    image: 'harbor.g3s-service.itcoc.tech/i3s/backends/bitnami/elasticsearch:7-centos-7'    
+    container_name: training-grafana-elastic
+    hostname: training-grafana-elastic
+    restart: unless-stopped
+
+    # environment:
+    # # remove replication for single node case
+    #   - 
+
+    ports:
+      - '9200:9200'
+      - '9300:9300'
+    volumes:
+      - '${PWD}/data/elasticsearch:/bitnami/elasticsearch/data'
+
+    networks:
+      - tg-elastic
+      # - tg-elastic-internal
+
+  prometheus:
+    image: harbor.g3s-service.itcoc.tech/i3s/backends/bitnami/prometheus:2-centos-7
+    container_name: training-grafana-prometheus
+    hostname: training-grafana-prometheus
+
+    restart: unless-stopped
+    logging:
+      options:
+        tag: "{{.ImageName}}/{{.Name}}/{{.ID}}"
+
+    ports:
+      - '9090:9090'
+
+    volumes:
+      - ${PWD}/conf/prometheus/prometheus.yml:/opt/bitnami/prometheus/conf/prometheus.yml
+      - ${PWD}/data/prometheus:/opt/bitnami/prometheus/data
+
+    networks:
+      - tg-prometheus
+      - tg-nodeexporter-metrics
+      - tg-elastic-metrics
+      - tg-fluentd-metrics
+      - tg-cadvisor-metrics
+      - tg-logstash-metrics    
+
+
+  node-exporter:
+    image: harbor.g3s-service.itcoc.tech/i3s/backends/bitnami/node-exporter:1-centos-7
+    container_name: training-grafana-nodeexporter
+    hostname: training-grafana-nodeexporter
+    restart: unless-stopped
+
+    privileged: true
+
+    networks:
+          - tg-nodeexporter-metrics
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:rw
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+
+
+  grafana:
+  # docker pull harbor.g3s-service.itcoc.tech/i3s/backends/bitnami/grafana:6.7.4-centos-7-r0
+    image: harbor.g3s-service.itcoc.tech/i3s/backends/bitnami/grafana:6.7.4-centos-7-r0
+    hostname: training-grafana
+    container_name: training-grafana
+
+    restart: unless-stopped
+    logging:
+      options:
+        tag: "{{.ImageName}}/{{.Name}}/{{.ID}}"
+
+    depends_on:
+      - maria-db
+
+    ports:
+      - "3000:3000"
+
+    environment:
+      # GF_LOG_LEVEL=debug
+      GF_DATABASE_URL: mysql://grafana:grafana@training-grafana-mariadb:3306/grafana
+      GF_PANELS_DISABLE_SANITIZE_HTML: "true"
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+    # env_file:
+      # - 'env.grafana'
+
+    # volumes:
+      # - ${PWD}/data/grafana:/var/lib/grafana:rw
+
+    networks:
+      - tg-mariadb  
+      - tg-elastic
+      - tg-prometheus
+      - tg-influxdb
+
+  cadvisor:
+    image: gcr.io/google-containers/cadvisor:latest
+    container_name: training-grafana-cadvisor
+
+    restart: unless-stopped
+    logging:
+      options:
+        tag: "{{.ImageName}}/{{.Name}}/{{.ID}}"
+
+    ports:
+     - 30080:8080
+
+    volumes:
+     - /:/rootfs:ro
+     - /var/run:/var/run:rw
+     - /sys:/sys:ro
+     - /var/lib/docker/:/var/lib/docker:ro
+
+    depends_on:
+     - redis
+
+    networks:
+     - tg-cadvisor-metrics
+     - tg-redis
+
+
+# docker run --rm -i  -d -p 8765:8765   --privileged     : 
+  
+  falco:
+    image: falcosecurity/falco:latest
+    container_name: training-grafana-falco
+    restart: unless-stopped
+    privileged: true
+    logging:
+      options:
+        tag: "{{.ImageName}}/{{.Name}}/{{.ID}}"
+
+    ports:
+     - 8765:8765
+
+    volumes:
+     - ${PWD}/conf/falco:/etc/falco:rw
+     - /dev:/host/dev     
+     - /proc:/host/proc:ro     
+     - /boot:/host/boot:ro     
+     - /lib/modules:/host/lib/modules:ro     
+     - /usr:/host/usr:ro     
+     - /etc:/host/etc:ro
+
+
+    
+  redis:
+    image: redis:latest
+    container_name: training-grafana-redis
+
+    restart: unless-stopped
+    logging:
+      options:
+        tag: "{{.ImageName}}/{{.Name}}/{{.ID}}"
+
+    ports:
+     - 6379:6379
+
+    networks:
+     - tg-redis
+
+networks:
+    tg-influxdb:
+        driver: bridge
+    tg-influxdb-telegraf:
+        driver: bridge
+    tg-prometheus:
+        driver: bridge
+    tg-mariadb:
+        driver: bridge
+    # tg-logstash-web:
+    #     driver: bridge
+    tg-logstash-metrics:
+        driver: bridge
+    tg-elastic:
+        driver: bridge
+    tg-elastic-metrics:
+        driver: bridge
+    tg-nodeexporter-metrics:
+        driver: bridge
+    tg-fluentd-metrics:
+        driver: bridge
+    tg-cadvisor-metrics:
+        driver: bridge
+    tg-redis:
+        driver: bridge
+      
+
+

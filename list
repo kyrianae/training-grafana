@@ -1,0 +1,11 @@
+harbor.g3s-service.itcoc.tech/i3s/backends/bitnami/influxdb:1-centos-7
+telegraf-simple:dev
+harbor.g3s-service.itcoc.tech/i3s/backends/bitnami/mariadb-galera:10.5-centos-7
+harbor.g3s-service.itcoc.tech/i3s/backends/bitnami/fluentd:1-centos-7
+harbor.g3s-service.itcoc.tech/i3s/backends/bitnami/elasticsearch-exporter:1-centos-7
+harbor.g3s-service.itcoc.tech/i3s/backends/bitnami/elasticsearch:7-centos-7
+harbor.g3s-service.itcoc.tech/i3s/backends/bitnami/prometheus:2-centos-7
+harbor.g3s-service.itcoc.tech/i3s/backends/bitnami/node-exporter:1-centos-7
+harbor.g3s-service.itcoc.tech/i3s/backends/bitnami/grafana:6.7.4-centos-7-r0
+gcr.io/google-containers/cadvisor:latest
+redis:latest

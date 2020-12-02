@@ -1,0 +1,6 @@
+/docker-images
+/data/elasticsearch/*  
+/data/fluentd/*
+/data/influxdb/* 
+/data/mariadb/*
+/data/prometheus/*
